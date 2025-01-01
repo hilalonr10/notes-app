@@ -1,5 +1,4 @@
-const Note = require("../models/Notes");
-const mongoose = require("mongoose");
+const NoteService = require("../services/noteService");
 
 /**
  * GET /
@@ -15,23 +14,8 @@ exports.dashboard = async (req, res) => {
   };
 
   try {
-    // Aggregate notes for the user
-    const notes = await Note.aggregate([
-      { $sort: { updatedAt: -1 } },
-      { $match: { user: new mongoose.Types.ObjectId(req.user.id) } },
-      {
-        $project: {
-          title: { $substr: ["$title", 0, 30] },
-          body: { $substr: ["$body", 0, 100] },
-        },
-      },
-    ])
-      .skip(perPage * page - perPage)
-      .limit(perPage)
-      .exec();
-
-    // Count total notes for pagination
-    const count = await Note.countDocuments({ user: req.user.id });
+    const notes = await NoteService.getNotesByUser(req.user.id, perPage, page);
+    const count = await NoteService.countNotesByUser(req.user.id);
 
     res.render("dashboard/index", {
       userName: req.user.firstName,
@@ -53,9 +37,7 @@ exports.dashboard = async (req, res) => {
  */
 exports.dashboardViewNote = async (req, res) => {
   try {
-    const note = await Note.findById(req.params.id)
-      .where({ user: req.user.id })
-      .lean();
+    const note = await NoteService.getNoteById(req.params.id, req.user.id);
 
     if (note) {
       res.render("dashboard/view-note", {
@@ -78,10 +60,7 @@ exports.dashboardViewNote = async (req, res) => {
  */
 exports.dashboardUpdateNote = async (req, res) => {
   try {
-    await Note.findOneAndUpdate(
-      { _id: req.params.id, user: req.user.id },
-      { title: req.body.title, body: req.body.body, updatedAt: Date.now() }
-    );
+    await NoteService.updateNote(req.params.id, req.user.id, req.body);
     res.redirect("/dashboard");
   } catch (error) {
     console.log(error);
@@ -95,7 +74,7 @@ exports.dashboardUpdateNote = async (req, res) => {
  */
 exports.dashboardDeleteNote = async (req, res) => {
   try {
-    await Note.deleteOne({ _id: req.params.id, user: req.user.id });
+    await NoteService.deleteNote(req.params.id, req.user.id);
     res.redirect("/dashboard");
   } catch (error) {
     console.log(error);
@@ -120,7 +99,7 @@ exports.dashboardAddNote = async (req, res) => {
 exports.dashboardAddNoteSubmit = async (req, res) => {
   try {
     req.body.user = req.user.id; // Attach user ID to the note
-    await Note.create(req.body);
+    await NoteService.createNote(req.body);
     res.redirect("/dashboard");
   } catch (error) {
     console.log(error);
@@ -150,16 +129,10 @@ exports.dashboardSearch = async (req, res) => {
  */
 exports.dashboardSearchSubmit = async (req, res) => {
   try {
-    const searchTerm = req.body.searchTerm;
-    const searchNoSpecialChars = searchTerm.replace(/[^a-zA-Z0-9 ]/g, "");
-
-    // Find notes matching the search term
-    const searchResults = await Note.find({
-      $or: [
-        { title: { $regex: new RegExp(searchNoSpecialChars, "i") } },
-        { body: { $regex: new RegExp(searchNoSpecialChars, "i") } },
-      ],
-    }).where({ user: req.user.id });
+    const searchResults = await NoteService.searchNotes(
+      req.user.id,
+      req.body.searchTerm
+    );
 
     res.render("dashboard/search", {
       searchResults,
